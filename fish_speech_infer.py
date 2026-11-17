@@ -9,6 +9,7 @@ import shutil
 import gc
 import logging
 from contextlib import contextmanager
+from fish_speech_api.utils.cudagraphs import mark_compiled_step_starts
 from huggingface_hub import snapshot_download
 
 # Configure logger
@@ -139,7 +140,11 @@ def generate_semantic_tokens(
 
     with temporary_argv(["inference.py"] + args):
         try:
-            text2semantic_main()
+            if compile_model:
+                with mark_compiled_step_starts(torch):
+                    text2semantic_main()
+            else:
+                text2semantic_main()
         except SystemExit:
             logger.debug("text2semantic_main() exited with SystemExit (normal for CLI entrypoints).")
 
