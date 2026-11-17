@@ -21,6 +21,9 @@ services:
       context: .
     volumes:
       - ./models:/app/models
+      - ./voices:/app/voices
+    environment:
+      FISH_SPEECH_VOICE_DIR: /app/voices
     ports:
       - "8000:8000"
     <<: *shared-deploy

@@ -11,8 +11,11 @@ from fastapi.responses import FileResponse
 from fastapi.exceptions import HTTPException
 
 from fish_speech_api.services.tts_service import generate_tts
+from fish_speech_api.services.voice_store import MAX_AUDIO_BYTES, VoiceStore
 
-VOICE_DIR = Path("./examples")
+BUILTIN_VOICE_DIR = Path("./examples")
+VOICE_DIR = Path(os.environ.get("FISH_SPEECH_VOICE_DIR", "./voices"))
+VOICE_STORE = VoiceStore(VOICE_DIR, BUILTIN_VOICE_DIR)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -39,17 +42,13 @@ class TTSRequest(BaseModel):
 
 
 async def get_voice_sample(voice: str) -> Tuple[bytes, str]:
-    """Get voice sample and corresponding text from .lab file"""
-    voice_key = voice.lower()
-    voice_path = VOICE_DIR / f"{voice_key}.wav"
-    lab_path = VOICE_DIR / f"{voice_key}.lab"
-
-    if not voice_path.exists():
-        raise HTTPException(400, f"Voice sample not found: {voice_key}.wav")
-    if not lab_path.exists():
-        raise HTTPException(400, f"Text label not found: {voice_key}.lab")
-
-    return voice_path.read_bytes(), lab_path.read_text().strip()
+    """Get a voice sample and its text label."""
+    try:
+        return VOICE_STORE.get(voice)
+    except ValueError as error:
+        raise HTTPException(400, error.args[0])
+    except FileNotFoundError as error:
+        raise HTTPException(400, error.args[0])
 
 
 async def process_tts_request(
@@ -104,6 +103,27 @@ async def process_tts_request(
     )
 
 
+@router.post("/model", status_code=201)
+async def create_voice_model(
+    name: str = Form(...),
+    reference_audio: UploadFile = File(...),
+    reference_text: str = Form(...),
+):
+    if not reference_audio.filename or not reference_audio.filename.lower().endswith(".wav"):
+        raise HTTPException(400, "Invalid audio format (must be WAV)")
+
+    audio_bytes = await reference_audio.read(MAX_AUDIO_BYTES + 1)
+    try:
+        voice_name = VOICE_STORE.create(name, audio_bytes, reference_text)
+    except FileExistsError as error:
+        raise HTTPException(409, error.args[0])
+    except ValueError as error:
+        raise HTTPException(400, error.args[0])
+
+    return {"id": voice_name, "voice": voice_name}
+
+
+@router.post("/v1/tts")
 @router.post("/audio/speech")
 async def speech_endpoint(request: Request):
     content_type = request.headers.get('Content-Type', '')
@@ -139,7 +159,7 @@ async def speech_endpoint(request: Request):
             if reference_audio:
                 if not reference_audio.filename.lower().endswith('.wav'):
                     raise HTTPException(400, "Invalid audio format (must be WAV)")
-                reference_audio_bytes = await reference_audio.read()
+                reference_audio_bytes = await reference_audio.read(MAX_AUDIO_BYTES + 1)
 
             return await process_tts_request(
                 model=model,

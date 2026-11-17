@@ -92,6 +92,31 @@ curl http://localhost:8000/audio/speech \
   --output "speech.wav"
 ```
 
+### Create a reusable voice profile
+
+The `/model` endpoint stores a WAV reference sample and its transcript for reuse. It does not train a separate checkpoint. Docker Compose persists profiles in `./voices`.
+
+```shell
+curl http://localhost:8000/model \
+  -X POST \
+  -F name="my-voice" \
+  -F reference_audio="@voice.wav" \
+  -F reference_text="Transcript of the reference audio"
+```
+
+The response includes the saved voice ID. Use it with `/v1/tts`:
+
+```shell
+curl http://localhost:8000/v1/tts \
+  -X POST \
+  -F model="fish-speech-1.5" \
+  -F voice="my-voice" \
+  -F input="Hello from the saved voice" \
+  --output "speech.wav"
+```
+
+`/audio/speech` remains available as an alias.
+
 ### Generate speech with example voice
 
 ```shell
